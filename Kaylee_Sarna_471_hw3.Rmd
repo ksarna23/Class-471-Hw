@@ -1,0 +1,477 @@
+---
+title: "PQHS 471 Hw 3"
+author: "Kaylee Sarna"
+date: "April 10, 2018"
+output:
+  html_document:
+    toc: true
+    df_print: paged
+    code_folding: show
+    keep_md: true
+---
+
+##Set-up
+
+```{r setup, include=FALSE, warning = FALSE, message = FALSE}
+knitr::opts_chunk$set(comment = NA)
+
+
+# insert other packages you need here
+library(skimr)
+library(forcats)
+library(broom)
+library(rms)
+library(Hmisc)
+library(pROC)
+library(ROCR)
+library(simputation)
+library(ISLR)
+library(MASS)
+library(tidyverse)
+
+```
+
+##Chapter 7 Exercise 9
+
+9.
+
+```{r load_boston}
+library(MASS)
+Boston=Boston
+write.csv(Boston, "C:/Users/kaylee/Dropbox/stat 471/hw3/Boston.csv")
+summary(Boston)
+
+```
+
+9.a.The regression output shows that each of the polynomial terms are significant due to such low p values.The plot shows that there is a smooth curve and it fits the data decently.
+
+```{r ch_7_9_a}
+attach(Boston)
+#Fit cubic polynomial regression and regression output
+fita = lm(nox ~ poly(dis, 3), data = Boston)
+summary(fita)
+#Plot data and polynomial fits
+disrange = range(dis)
+dis.grid = seq(from = disrange[1], to = disrange[2])
+preds = predict(fita, list(dis = dis.grid))
+plot(nox ~ dis, data = Boston, col = "black")
+lines(dis.grid, preds, col = "blue", lwd = 2)
+```
+
+9.b. The plot looks similar to 9.a. The residual sum of squares decreases as the degree of polynomial increases from 1 to 10.
+
+```{r ch7_9_b}
+#Plot polynomial fits 1 through 10
+#Fit 10 polynomial regression and regression output
+fitb = lm(nox ~ poly(dis, 10), data = Boston)
+
+#Plot data and polynomial fits fro polynomial degree 10
+disrangeb = range(dis)
+dis.gridb = seq(from = disrangeb[1], to = disrangeb[2])
+predsb = predict(fitb, list(dis = dis.gridb))
+plot(nox ~ dis, data = Boston, col = "black")
+lines(dis.gridb, predsb, col = "blue", lwd = 2)
+
+
+#Report associated residual sum of squares
+rsspoly10 = rep(NA, 10)
+for (i in 1:10) {
+    fitc = lm(nox ~ poly(dis, i), data = Boston)
+    rsspoly10[i] = sum(fitc$residuals^2)
+}
+rsspoly10
+```
+
+9.c.A 20-fold cross-validation shows that the CV error decreases from 1-3 polynomial degrees then slowly increases as the polynomial degrees increase up to 10. I picked 3 as the best polynomial degree because the CV error is 0.00387 which is the lowest and therefore best polynomial degree. 4 is the second best polynomial degree with CV error of 0.00388.
+
+```{r ch7_9_c}
+#Cross validation with K=20
+library(boot)
+crossv = rep(NA, 10)
+for (i in 1:10) {
+    logfit = glm(nox ~ poly(dis, i), data = Boston)
+    crossv[i] = cv.glm(Boston, logfit, K = 20)$delta[2]
+}
+plot(1:10, crossv, xlab = "Degree", ylab = "Cross val error", type = "l", pch = 20, 
+    lwd = 2)
+crossv
+```
+
+9.d.I chose the knots 4,7, and 10 because dis has a range of 1-13. The 25th, 50th and 75th percentiles correspond roughly with 4,7 and 10.The output shows that all of the spline fits are significant from 1-6 due to very low p values and the adjusted R squared is 0.7151 which is fairly high and desirable in model fits.The plot shows a mostly smooth curve and fit with the data.
+
+```{r ch7_9_d}
+range(dis)
+#Regression spline with 4 degrees of freedom 
+
+library(splines)
+fitd = lm(nox ~ bs(dis, df = 4, knots = c(4, 7, 10)), data = Boston)
+summary(fitd)
+
+#Plot the regression spline fit
+predd = predict(fitd, list(dis = dis.grid))
+plot(nox ~ dis, data = Boston, col = "darkgrey")
+lines(dis.grid, predd, col = "blue", lwd = 2)
+```
+
+9.e.The RSS decreases from 3 degrees of freedom to about 13 then increases from 14,15, and 16, then decreases again from 17-19 and increases at 20. Both mostly it is a decrease in RSS as degrees of freedom increases.
+
+```{r ch7_9_e}
+
+#Regression spline for various degrees of freedom and RSS
+cve = rep(NA, 20)
+for (i in 3:20) {
+    fite = lm(nox ~ bs(dis, df = i), data = Boston)
+    cve[i] = sum(fite$residuals^2)
+}
+cve[-c(1, 2)]
+plot(cve,xlab="DF")
+```
+
+9.f.I used a 20 fold cross validation to determine which degrees of freedom was best for the regression spline.I tested between degrees of freedom for 3 to 20.The cross validation error goes up and down occasionally as degrees of freedom increases. However, the lowest cross validation error is at 10 degrees of freedoml Since we want the the cross validation error to be low then 10 degrees of freedom is the best choice for the regression spline for this data.
+
+```{r ch7_9_f}
+#Cross validation for best df for regression spline 20 fold
+cvf = rep(NA, 20)
+for (i in 3:20) {
+    fitf = glm(nox ~ bs(dis, df = i), data = Boston)
+    cvf[i] = cv.glm(Boston, fitf, K = 20)$delta[2]
+}
+cvf
+
+
+```
+
+
+
+##Chapter 8 Exercise 9
+
+9.
+```{r load_OJ}
+library(ISLR)
+OJ=OJ
+write.csv(OJ, "C:/Users/kaylee/Dropbox/stat 471/hw3/OJ.csv")
+summary(OJ)
+
+```
+
+9.a.I created a training set with 800 observations using the OJ data from ISLR package. A test set was created with the remaining 270 observations from the OJ data.
+
+```{r ch8_9_a}
+#Training and test set creation
+attach(OJ)
+set.seed(1)
+
+train = sample(dim(OJ)[1], 800)
+OJ_train = OJ[train, ]
+OJ_test = OJ[-train, ]
+```
+
+9.b. The variables that were used in tree construction were LoyalCH, PriceDiff, SpecialCH, and ListPriceDiff.The number of terminal nodes was 8. The training error rate or misclassification error rate was 0.165.
+
+```{r ch8_9_b}
+#Fit tree to Oj training data with Purchase as response
+library(tree)
+ojtree1 = tree(Purchase ~ ., data = OJ_train)
+summary(ojtree1)
+```
+
+9.c. There is a terminal node labeled "8)" and this is known due to the asterisk in the output.The splitting variable at node "8)" is LoyalCH and the splitting value is 0.0356415.There are 57 observations in this branch.The deviance is 10.07.The prediction at this node for Purchase is MM.0.01754 About 1.8% points in this node have CH as the value for Purchase.About 98.2% of points in this node have MM as the value for Purchase.
+
+```{r ch8_9_c}
+#Detailed tree object and terminal node analysis
+ojtree1
+
+```
+
+9.d.LoyalCH is the most common and important variable in the tree since it is in the top three nodes. If LoyalCH greater than (>) 0.764572 than the tree predicts CH as the purchase.Then there are intermediate values for LoyalCH. If LoyalCH < 0.764572 and ListPriceDiff is either < or > 0.235 then the tree predicts CH as the purchase. If LoyalCH >0.264232 and PriceDiff >=0.195 then the tree predicts CH as the purchase. If LoyalCH > 0.264232 and PriceDiff < 0.195 and SpecialCH >= 0.5 then the tree predicts CH and predicts MM if SpecialCH <0.5. If LoyalCH is <0.264232 and Loyal CH is either < or >= to 0.0356415 then the tree predicts MM as purchase.
+
+```{r ch8_9_d}
+#Plot tree and interpret
+plot(ojtree1)
+text(ojtree1,pretty=0)
+
+```
+
+9.e.The test error rate is (49+12)/270=0.2259. So using this approach about 22.59% of the purchases are predicted incorrectly and correct predictions occur for about 77.41% of purchases. The test error rate is 0.2259.
+
+```{r ch8_9_e}
+#Predict response on test data and produce confusion matrix 
+predoj = predict(ojtree1, OJ_test, type = "class")
+table(OJ_test$Purchase, predoj)
+#Test error rate
+(49+12)/270
+```
+
+9.f.The tree with 5 terminal nodes has the lowest cross validation error rate. This suggests 5 terminal nodes might be optimal.
+
+```{r ch8_9_f}
+#CV tree function applied
+ojcv = cv.tree(ojtree1, FUN = prune.misclass)
+ojcv
+```
+
+9.g.The plot gives CV error rates for each tree size in the OJ data.Tree size 5 looks to have the lowest CV error rate.
+
+```{r ch8_9_g}
+#Plot with tree size and cv error rate
+plot(ojcv$size, ojcv$dev, type = "b", xlab = "Tree Size", ylab = "CV error rate")
+```
+
+9.h.The tree with 5 terminal nodes has the lowest cross validation error rate based on both the output from ojcv and the resulting plot.
+
+9.i.I produced a pruned tree with 5 terminal nodes based on the question's directions and the results from cross-validation earlier.
+
+```{r ch8_9_i}
+#Pruned tree with cross-validation
+pruneoj = prune.misclass(ojtree1, best = 5)
+```
+
+9.j.The misclassification error rate or training error rate is exactly the same in the pruned and unpruned trees. It is 0.165.
+
+```{r ch8_9_j}
+#Compare training error rates in pruned and unpruned trees
+summary(ojtree1)
+summary(pruneoj)
+```
+
+9.k.The test error rate is the same in both the pruned and unpruned trees. The test error rate is 0.2259259.
+
+```{r ch8_9_k}
+#Unpruned test error rate
+unprunedpred = predict(ojtree1, OJ_test, type = "class")
+unprunedtesterror = sum(OJ_test$Purchase != unprunedpred)
+unprunedtesterror/length(unprunedpred)
+#Pruned test error rate
+prunedpred = predict(pruneoj, OJ_test, type = "class")
+prunedtesterror = sum(OJ_test$Purchase != prunedpred)
+prunedtesterror/length(prunedpred)
+```
+
+##Chapter 8 Khan data question
+
+
+I found this question really difficult. Everything I tried slowed my computer down and made it freeze. Also, I tried to use code modified from the book and class notes but did not have much luck. Here are some of my attempts.
+Set-up Khan data
+library(ISLR)
+khan=khan
+
+
+Khanytrain=Khan$ytrain
+write.csv(Khanytrain, "C:/Users/kaylee/Dropbox/stat 471/hw3/Khanytrain.csv")
+
+
+Make Khan xtrain main train data and give id to merge with ytrain.
+
+Khantrain=Khan$xtrain
+Khantrain$id<-(1:63)
+
+Give id column to ytrain
+Khanytrain=Khan$ytrain
+Khanytrain$id<-(1:63)
+
+Rename x to tumor in ytrain and ytest
+library(plyr)
+rename(Khanytrain, c("x"="tumor"))
+
+Merge data
+Khantrain1<-merge(Khantrain,Khanytrain)
+
+Merge xtest and ytest
+Make Khan xtest main test data and give id to merge with ytest.
+Khantest=Khan$xtest
+Khantest$id<-(1:63)
+
+Give id column to ytrain
+Khanytest=Khan$ytest
+Khanytest$id<-(1:63)
+
+Rename x to tumor in ytrain and ytest
+library(plyr)
+rename(Khanytest, c("x"="tumor"))
+
+Merge data
+Khantest1<-merge(Khantest,Khanytest)
+
+
+set.seed(1)
+library(randomForest)
+rf.khantrain= randomForest(tumor∼.,data=Khantrain1 ,
+mtry=382, importance =TRUE)
+yhat.rf = predict(rf.khantrain ,newdata=Khantest1)
+mean((yhat.rf-Khantest1)^2)
+
+
+
+```{r set_up_khan}
+library(dendextend)
+khan=khan
+khantrain=khan$train
+khantest=khan$test
+```
+
+Since there are 64 variables in khantrain I took the square root of 64 and got 8. I used this for my mtry value.
+
+library(randomForest)
+set.seed(1)
+rf.khan= randomForest(EWS.T1∼.,data=khantrain , 
+mtry=8, importance =TRUE)
+yhat.rf = predict(rf.khan ,newdata=khantest)
+mean((yhat.rf-khan.test)^2)
+
+
+##Chapter 9 Exercise 8
+
+8.
+```{r load_OJ_again}
+library(ISLR)
+OJ=OJ
+write.csv(OJ, "C:/Users/kaylee/Dropbox/stat 471/hw3/OJ.csv")
+summary(OJ)
+
+```
+
+8.a.I created a training set with 800 observations using the OJ data from ISLR package. A test set was created with the remaining 270 observations from the OJ data.
+
+```{r ch9_8_a}
+#Training and test set creation
+attach(OJ)
+set.seed(2)
+
+train = sample(dim(OJ)[1], 800)
+OJ.train = OJ[train, ]
+OJ.test = OJ[-train, ]
+```
+
+8.b.When a support vector classifier was fit to the training data a summary was obtained. There were 440 support vectors out of the 800 points.The cost was 0.01 and there were two classes. Of the 440 support vectors, 220 of them were CH and the other 220 were MM.The SVM-type was a C-classification.
+
+```{r ch9_8_b}
+#Fit support vector classifier
+library(e1071)
+svm1 = svm(Purchase ~ ., kernel = "linear", data = OJ.train, cost = 0.01)
+summary(svm1)
+```
+
+8.c.The training error rate is 18% or 0.18 and the test error rate is 14.07% or 0.1407407.
+
+```{r ch9_8_c}
+#Training error rate
+predtrain8c = predict(svm1, OJ.train)
+table(OJ.train$Purchase, predtrain8c)
+(83+61)/(419+61+83+237)
+
+#Test error rate
+predtest8c=predict(svm1,OJ.test)
+table(OJ.test$Purchase,predtest8c)
+(21+17)/(156+17+21+76)
+```
+
+8.d.I selected a range of values from 0.01 - 10. Then I chose the optimal cost from the values I included in my range. The optimal cost is 6.0 because the error was lowest in this number from the selected numbers in my range.
+
+```{r ch9_8_d}
+#tune function
+set.seed(2)
+tune.out = tune(svm, Purchase ~ ., data = OJ.train, kernel = "linear", ranges = list(cost = c(0.01, 0.5, 2,4,6,8,10)))
+summary(tune.out)
+```
+
+8.e. The training error with cost=6.00 is 0.1675 or 16.75%.The test error with cost = 6.00 is 0.1296296.The training error decreased using this optimal cost from 18% to 16.75%. The test error also decreased using this optimal cost from 14.07% to about 13%.
+
+```{r ch9_8_e}
+#Training error with cost 6
+svm8e = svm(Purchase ~ ., kernel = "linear", data = OJ.train, cost = tune.out$best.parameters$cost)
+predtrain8e = predict(svm8e, OJ.train)
+table(OJ.train$Purchase, predtrain8e)
+(75+59)/(421+59+75+245)
+
+#Test error
+predtest = predict(svm8e, OJ.test)
+table(OJ.test$Purchase, predtest)
+(17+18)/(155+18+17+80)
+```
+
+8.f. Repeat-b=That there were 372 support vectors out of the 800 points.There were two classes. Of the 372 support vectors, 189 of them were CH and the other 183 were MM.The SVM-type was a C-classification.
+
+Repeat-stepc=The training error rate for the classifier is 0.155 or 15.5% and a test error rate of about 0.17 or 17%.
+
+Repeat-step d =I selected a range of values from 0.01 - 10. Then I chose the optimal cost from the values I included in my range. The optimal cost is 4.0 because the error was lowest in this number from the selected numbers in my range.
+
+Repeat-step e=The training error with cost=4.00 is 0.145 or 14.5%.The test error with cost = 4.00 is 0.1889.The training error decreased using this optimal cost from 15.5% to 14.5%. The test error increased using this optimal cost from 17% to about 18.9%. The training error is better with radial kernal but the test error is worse with radial kernal.
+
+```{r ch9_8_f}
+#Support vector machine with radial kernal and default gamma
+#Steps from b
+set.seed(1)
+radial = svm(Purchase ~ ., data = OJ.train, kernel = "radial")
+summary(radial)
+##step c
+#Training error rate
+predtrain8f = predict(radial, OJ.train)
+table(OJ.train$Purchase, predtrain8f)
+(84+40)/(440+40+84+236)
+
+#Test error rate
+predtest8f=predict(radial,OJ.test)
+table(OJ.test$Purchase,predtest8f)
+(26+20)/(153+20+26+71)
+
+##step d
+set.seed(2)
+tune.out8f = tune(svm, Purchase ~ ., data = OJ.train, kernel = "radial", ranges = list(cost = c(0.01, 0.5, 2,4,6,8,10)))
+summary(tune.out8f)
+
+##Step e
+svm8f = svm(Purchase ~ ., kernel = "radial", data = OJ.train, cost = tune.out8f$best.parameters$cost)
+predtrain8f = predict(svm8f, OJ.train)
+table(OJ.train$Purchase, predtrain8f)
+(74+42)/(438+42+74+246)
+
+#Test error
+predtest8f = predict(svm8f, OJ.test)
+table(OJ.test$Purchase, predtest8f)
+(29+22)/(151+22+29+68)
+```
+
+8.g.
+Repeat-b=That there were 422 support vectors out of the 800 points.There were two classes. Of the 422 support vectors, 212 of them were CH and the other 210 were MM.The SVM-type was a C-classification.
+
+Repeat-stepc=The training error rate for the classifier is 0.175 or 17.5% and a test error rate of about 0.178 or 17.8%.
+
+Repeat-step d =I selected a range of values from 0.01 - 10. Then I chose the optimal cost from the values I included in my range. The optimal cost is 8.0 because the error was lowest in this number from the selected numbers in my range.
+
+Repeat-step e=The training error with cost=4.00 is 0.15 or 15%.The test error with cost = 4.00 is 0.156.The training error decreased using this optimal cost from 17.5% to 15%. The test error decreased using this optimal cost from 17.8% to about 15.6%. The training error is better with poly kernal but the test error is better with poly kernal.
+
+```{r ch9_8_g}
+#Support vector machine with poly kernal and degree=2
+#Steps from b
+set.seed(1)
+poly8g = svm(Purchase ~ ., data = OJ.train, kernel = "poly")
+summary(poly8g)
+##step c
+#Training error rate
+predtrain8g = predict(poly8g, OJ.train)
+table(OJ.train$Purchase, predtrain8g)
+(105+35)/(445+35+105+215)
+
+#Test error rate
+predtest8g=predict(poly8g,OJ.test)
+table(OJ.test$Purchase,predtest8g)
+(36+12)/(161+12+36+61)
+
+##step d
+set.seed(2)
+tune.out8g = tune(svm, Purchase ~ ., data = OJ.train, kernel = "poly",degree=2, ranges = list(cost = c(0.01, 0.5, 2,4,6,8,10)))
+summary(tune.out8g)
+
+##Step e
+svm8g = svm(Purchase ~ ., kernel = "poly",degree=2, data = OJ.train, cost = tune.out8g$best.parameters$cost)
+predtrain8g = predict(svm8g, OJ.train)
+table(OJ.train$Purchase, predtrain8g)
+(84+36)/(444+36+84+236)
+
+#Test error
+predtest8g = predict(svm8g, OJ.test)
+table(OJ.test$Purchase, predtest8g)
+(29+13)/(160+13+29+68)
+```
+
+8.h.I would say the polynomial kernal is the best. One reason is because the test and training error rates closely match with 15.6 and 15% respectively. Also, the training error is less than in linear kernal, close to radial kernal(14.5).The test error is less than radial(18.9) but more than linear(12.96). Of all three types, polynomial seems to be most consistent between data and lower in misclassification errors.
